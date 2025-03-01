@@ -270,10 +270,18 @@ export default function PaymentPage({ groupName, amount, paymentId }: PaymentPag
           // Trigger a refresh event for the Dashboard component
           // This uses a custom event that the Dashboard can listen for
           if (typeof window !== 'undefined') {
+            console.log('Payment successful, triggering UI updates');
+            
+            // Explicitly update the group's amountCollected first
+            const updateResult = coinbaseWalletService.updateGroupAmountCollected(group.id);
+            console.log('Group amount update result:', updateResult);
+            
+            // Dispatch multiple events to ensure the UI updates
             const refreshEvent = new CustomEvent('payment-completed', {
               detail: { 
                 paymentId,
-                groupId: group.id
+                groupId: group.id,
+                amount: amount
               }
             });
             window.dispatchEvent(refreshEvent);
@@ -281,8 +289,18 @@ export default function PaymentPage({ groupName, amount, paymentId }: PaymentPag
             // Also store a flag in localStorage to indicate a refresh is needed
             localStorage.setItem('settle_needs_refresh', 'true');
             
-            // Explicitly update the group's amountCollected
-            coinbaseWalletService.updateGroupAmountCollected(group.id);
+            // Force a second update after a short delay to ensure UI catches the change
+            setTimeout(() => {
+              console.log('Sending delayed refresh event');
+              window.dispatchEvent(new CustomEvent('payment-completed', {
+                detail: { 
+                  paymentId,
+                  groupId: group.id,
+                  amount: amount,
+                  delayed: true
+                }
+              }));
+            }, 1000);
           }
         }
       }

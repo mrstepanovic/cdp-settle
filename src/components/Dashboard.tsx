@@ -18,6 +18,10 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [claimTxDetails, setClaimTxDetails] = useState<{
+    txHash: string;
+    explorerUrl: string;
+  } | null>(null);
 
   useEffect(() => {
     if (isConnected && address) {
@@ -31,10 +35,11 @@ export default function Dashboard() {
   // Add a refresh interval to periodically check for updates
   useEffect(() => {
     if (isConnected && address) {
-      // Set up an interval to refresh the groups data every 10 seconds
+      // Set up an interval to refresh the groups data more frequently (every 3 seconds)
       const intervalId = setInterval(() => {
-        setRefreshTrigger(prev => prev + 1);
-      }, 10000);
+        console.log('Auto-refresh triggered');
+        loadGroups();
+      }, 3000);
       
       // Clean up the interval on component unmount
       return () => clearInterval(intervalId);
@@ -49,14 +54,16 @@ export default function Dashboard() {
       if (needsRefresh === 'true') {
         // Clear the flag
         localStorage.removeItem('settle_needs_refresh');
-        // Trigger a refresh
-        setRefreshTrigger(prev => prev + 1);
+        // Trigger a refresh immediately
+        console.log('Refresh needed flag detected, refreshing data');
+        loadGroups();
       }
       
       // Set up event listener for payment-completed events
       const handlePaymentCompleted = () => {
-        // Trigger a refresh
-        setRefreshTrigger(prev => prev + 1);
+        // Trigger a refresh immediately
+        console.log('Payment completed event detected, refreshing data');
+        loadGroups();
       };
       
       window.addEventListener('payment-completed', handlePaymentCompleted);
@@ -163,6 +170,14 @@ export default function Dashboard() {
       console.log('Claim funds result:', result);
       
       if (result.success) {
+        // Store the transaction details
+        if (result.txHash && result.explorerUrl) {
+          setClaimTxDetails({
+            txHash: result.txHash,
+            explorerUrl: result.explorerUrl
+          });
+        }
+        
         alert('Funds claimed successfully!');
         loadGroups(); // Refresh groups after claiming
       }
@@ -273,10 +288,25 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-gray-800">Your Groups</h2>
         <button 
-          onClick={() => setRefreshTrigger(prev => prev + 1)}
-          className="px-3 py-1 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50"
+          onClick={() => {
+            console.log('Refresh button clicked');
+            // Show loading state
+            setIsLoading(true);
+            // Directly call loadGroups for immediate refresh
+            loadGroups().finally(() => {
+              // Update UI to show refresh was successful
+              const refreshButton = document.querySelector('.refresh-button');
+              if (refreshButton) {
+                refreshButton.classList.add('bg-green-100');
+                setTimeout(() => {
+                  refreshButton.classList.remove('bg-green-100');
+                }, 500);
+              }
+            });
+          }}
+          className="px-3 py-1 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors refresh-button"
         >
-          Refresh
+          Refresh Now
         </button>
       </div>
       
@@ -392,6 +422,22 @@ export default function Dashboard() {
               ? `Claim ${selectedGroup.amountCollected} ${selectedGroup.tokenSymbol}` 
               : 'No Funds to Claim'}
           </button>
+          
+          {claimTxDetails && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-md">
+              <h4 className="text-md font-medium text-green-800">Funds Claimed Successfully!</h4>
+              <p className="text-sm text-green-600 mt-1">Transaction Hash:</p>
+              <p className="text-xs text-gray-600 break-all">{claimTxDetails.txHash}</p>
+              <a 
+                href={claimTxDetails.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-sm text-red-600 hover:text-red-800 underline"
+              >
+                View on Block Explorer
+              </a>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

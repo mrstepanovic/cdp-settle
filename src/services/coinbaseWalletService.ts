@@ -63,6 +63,8 @@ export interface SmartWalletGroup {
   network: string;
   tokenSymbol: string;
   tokenAddress: string;
+  lastClaimTxHash?: string;
+  lastClaimTxExplorerUrl?: string;
 }
 
 // Helper function to get explorer URL for a transaction
@@ -491,6 +493,23 @@ export const coinbaseWalletService = {
       const verifyStorage = loadFromStorage();
       console.log('Verified group data after save:', verifyStorage.groups[group.id]);
       
+      // Trigger a custom event to notify the UI that a payment has been completed
+      if (typeof window !== 'undefined') {
+        console.log('Dispatching payment-completed event');
+        // Set a flag in localStorage to indicate that a refresh is needed
+        localStorage.setItem('settle_needs_refresh', 'true');
+        
+        // Dispatch a custom event that the Dashboard component can listen for
+        const paymentEvent = new CustomEvent('payment-completed', {
+          detail: {
+            groupId: group.id,
+            paymentId: paymentId,
+            amount: amount
+          }
+        });
+        window.dispatchEvent(paymentEvent);
+      }
+      
       return {
         success: true,
         txHash: receipt.transactionHash,
@@ -594,6 +613,10 @@ export const coinbaseWalletService = {
       
       // Reset the amount collected after claiming
       group.amountCollected = '0';
+      
+      // Store the transaction hash in the group for reference
+      group.lastClaimTxHash = receipt.transactionHash;
+      group.lastClaimTxExplorerUrl = explorerUrl;
       
       // Save to localStorage
       groups[groupId] = group;
@@ -717,7 +740,7 @@ export const coinbaseWalletService = {
     try {
       console.log(`Starting updateGroupAmountCollected for group ${groupId}`);
       
-      // Reload from storage to ensure we have the latest data
+      // Force reload from storage to ensure we have the latest data
       const storage = loadFromStorage();
       groups = storage.groups;
       payments = storage.payments;
@@ -737,6 +760,7 @@ export const coinbaseWalletService = {
       // Calculate the total amount collected from all paid payments
       let totalCollected = 0;
       for (const payment of group.payments) {
+        // Get the most up-to-date payment data
         const paymentData = payments[payment.id];
         console.log(`Checking payment ${payment.id}:`, paymentData);
         
@@ -747,8 +771,9 @@ export const coinbaseWalletService = {
       }
       
       // Update the group's amountCollected
-      console.log(`Updating group ${groupId} amountCollected from ${group.amountCollected} to ${totalCollected.toFixed(2)}`);
+      const oldAmount = group.amountCollected;
       group.amountCollected = totalCollected.toFixed(2);
+      console.log(`Updated group ${groupId} amountCollected from ${oldAmount} to ${group.amountCollected}`);
       
       // Save to localStorage
       groups[groupId] = group;
@@ -756,7 +781,23 @@ export const coinbaseWalletService = {
       
       // Verify the update was saved
       const verifyStorage = loadFromStorage();
-      console.log('Verified group after update:', verifyStorage.groups[groupId]);
+      const updatedGroup = verifyStorage.groups[groupId];
+      console.log('Verified group after update:', updatedGroup);
+      
+      // If the amount has changed, trigger a UI update
+      if (oldAmount !== group.amountCollected && typeof window !== 'undefined') {
+        console.log('Amount collected changed, triggering UI update');
+        localStorage.setItem('settle_needs_refresh', 'true');
+        
+        // Dispatch a custom event that the Dashboard component can listen for
+        const updateEvent = new CustomEvent('payment-completed', {
+          detail: {
+            groupId: groupId,
+            amountCollected: group.amountCollected
+          }
+        });
+        window.dispatchEvent(updateEvent);
+      }
       
       return true;
     } catch (error) {
